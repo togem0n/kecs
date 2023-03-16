@@ -3,7 +3,7 @@ use super::entity::*;
 // only use of entitymanager is to add and remove entity from manager
 // we later call its function from something like ECS manager within world
 pub trait EntityManager {
-    fn new() -> Self;
+    // fn new() -> Self;
 
     fn add(&mut self);
 
@@ -21,12 +21,12 @@ pub struct VecEntityManager {
 }
 
 impl EntityManager for VecEntityManager {
-    fn new() -> Self {
-        VecEntityManager {
-            entities: vec![],
-            num_of_entities: 0,
-        }
-    }
+    // fn new() -> Self {
+    //     VecEntityManager {
+    //         entities: vec![],
+    //         num_of_entities: 0,
+    //     }
+    // }
 
     fn add(&mut self) {
         let entity = Entity::from(self.num_of_entities);
@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn test_add() {
-        let mut manager = VecEntityManager::new();
+        let mut manager = VecEntityManager::default();
         manager.add();
         manager.add();
         assert!(manager.entities.contains(&Entity::from(0)));
@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn test_remove() {
-        let mut manager = VecEntityManager::new();
+        let mut manager = VecEntityManager::default();
         manager.add();
         manager.remove(Entity::from(0));
         assert!(!manager.entities.contains(&Entity::from(0)));
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn test_has() {
-        let mut manager = VecEntityManager::new();
+        let mut manager = VecEntityManager::default();
         manager.add();
         assert!(manager.has(Entity::from(0)));
     }
