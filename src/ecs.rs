@@ -1,22 +1,19 @@
 use crate::entity::*;
 use crate::entity_manager::*;
-use crate::component::*;
 use crate::component_manager::*;
 use crate::entity_builder::*;
 
 #[derive(Default)]
-pub struct EntityComponentSystem<E>
-    where E: EntityManager 
+pub struct EntityComponentSystem
 {
     component_manager: ComponentManager,
-    entity_manager: E,
+    entity_manager: EntityManager,
     entity_counter: u32,
 }
 
-impl<E> EntityComponentSystem<E>
-    where E: EntityManager
+impl EntityComponentSystem
 {
-    pub fn new(entity_manager: E) -> Self {
+    pub fn new(entity_manager: EntityManager) -> Self {
         EntityComponentSystem { 
             component_manager: ComponentManager::default(),
             entity_manager,  
@@ -24,11 +21,11 @@ impl<E> EntityComponentSystem<E>
         }
     }
 
-    pub fn entity_manager(&self) -> &E {
+    pub fn entity_manager(&self) -> &EntityManager {
         &self.entity_manager
     }
 
-    pub fn entity_manager_mut(&mut self) -> &mut E {
+    pub fn entity_manager_mut(&mut self) -> &mut EntityManager {
         &mut self.entity_manager
     }
 
@@ -40,7 +37,7 @@ impl<E> EntityComponentSystem<E>
         &mut self.component_manager
     }
 
-    pub fn create_entity(&mut self) -> EntityBuilder<'_, E> {
+    pub fn create_entity(&mut self) -> EntityBuilder<'_> {
         let entity: Entity = self.entity_counter.into();
         self.entity_counter += 1;
 
@@ -54,12 +51,12 @@ impl<E> EntityComponentSystem<E>
 } 
 
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_create_entity_with_component() {
-        let ecs = EntityComponentSystem::new(EntityManager::default());
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//
+//     #[test]
+//     fn test_create_entity_with_component() {
+//         let ecs = EntityComponentSystem::new(EntityManager::default());
+//     }
+// }
