@@ -13,10 +13,10 @@ pub struct EntityComponentSystem
 
 impl EntityComponentSystem
 {
-    pub fn new(entity_manager: EntityManager) -> Self {
+    pub fn new() -> Self {
         EntityComponentSystem { 
             component_manager: ComponentManager::default(),
-            entity_manager,  
+            entity_manager: EntityManager::default(),  
             entity_counter: 0 
         }
     }
@@ -51,12 +51,11 @@ impl EntityComponentSystem
 } 
 
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     #[test]
-//     fn test_create_entity_with_component() {
-//         let ecs = EntityComponentSystem::new(EntityManager::default());
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_entity_with_component() {
+    }
+}

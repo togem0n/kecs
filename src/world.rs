@@ -13,7 +13,7 @@ impl World
     /// Creates a new world from the given entity store.
     pub fn from_entity_store(entity_store: EntityManager) -> Self {
         World {
-            entity_component_manager: EntityComponentSystem::new(entity_store),
+            entity_component_manager: EntityComponentSystem::new(),
         }
     }
 }

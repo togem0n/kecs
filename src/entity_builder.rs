@@ -15,9 +15,8 @@ pub struct EntityBuilder<'a>
 
 impl<'a> EntityBuilder<'a>
 {
-    pub fn with<C: Component>(self, key: &str, component: C) -> Self {
-        // here should be: component_manager.append(self.entity, component)
-        self.component_manager.append(self.entity, key, component); 
+    pub fn with<C: Component>(self, component: C) -> Self {
+        self.component_manager.add_component_to_entity(self.entity, component); 
         self
     }
 
