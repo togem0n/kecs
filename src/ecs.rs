@@ -46,7 +46,6 @@ impl EntityComponentSystem
             entity_manager: &mut self.entity_manager, 
             component_manager: &mut self.component_manager,
         }
-
     }
 } 
 
@@ -57,5 +56,25 @@ mod tests {
 
     #[test]
     fn test_create_entity_with_component() {
+
+        let mut ecs = EntityComponentSystem::new();
+
+        struct ComponentOne {}
+        struct ComponentTwo {}
+        struct ComponentThree {}
+
+        ecs.component_manager
+            .register_component::<ComponentOne>()
+            .register_component::<ComponentTwo>()
+            .register_component::<ComponentThree>();
+
+        let entity_one = ecs
+            .create_entity()
+            .with(ComponentOne{
+            })
+            .build();
+        ecs.component_manager.print_general_infos();
+        assert_eq!(ecs.component_manager.contains_entity(entity_one), true);
     }
+
 }
