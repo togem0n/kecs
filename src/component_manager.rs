@@ -10,7 +10,7 @@ pub type Map = FxHashMap<(Entity, String), Box<dyn Any>>;
 
 pub type TypeName = String;
 
-pub type Components = FxHashMap<(TypeId, TypeName), Box<dyn Any>>;
+pub type Components = FxHashMap<TypeId, TypeName>;
 
 #[derive(Default)]
 pub struct ComponentManager {
@@ -27,8 +27,7 @@ impl ComponentManager {
     // register component in component manager by its typeid and typename
     pub fn register_component<C: Component>(&mut self) -> &mut Self {
         self.components.insert(
-            (TypeId::of::<C>(), String::from(type_name::<C>())), 
-            Box::new(String::from("test"))
+            TypeId::of::<C>(), String::from(type_name::<C>()) 
         );
         self
     }
@@ -90,7 +89,7 @@ impl ComponentManager {
 
     // check if a component is registered
     pub fn contain_component<C: Component>(&self) -> bool {
-        self.components.iter().any(|(k, _)| k.0 == TypeId::of::<C>())
+        self.components.iter().any(|(k, _)| *k == TypeId::of::<C>())
     }
 
     pub fn len_of_component(&self) -> usize {
@@ -106,8 +105,8 @@ impl ComponentManager {
 
     pub fn print_registered_components(&mut self) -> &mut Self {
         println!("Registered {} Components-----------------------------------", self.len_of_component());
-        for (k, _) in self.components.iter() {
-            println!("                                                          {}", k.1);
+        for (_, v) in self.components.iter() {
+            println!("                                                          {}", v);
         }
         println!("");
         self
@@ -150,6 +149,8 @@ mod tests {
             .register_component::<One>()
             .register_component::<Two>()
             .register_component::<Three>();
+        // component_manager.register_component::<(One, &Two, &Three)>();
+        component_manager.register_component::<i32>();
         component_manager
             .add_component_to_entity(entity_one, One{})
             .add_component_to_entity(entity_one, Two{});
