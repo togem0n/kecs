@@ -1,224 +1,12 @@
-use std::any::{Any, TypeId};
+use std::any::{TypeId};
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
-use std::sync::RwLock;
 
-pub(crate) type EntityId = u32;
+use crate::entity::*;
+use crate::component::*;
+use crate::archetype::*;
 
-pub trait Component: Sync + Send + 'static {}
-impl<T: Sync + Send + 'static> Component for T {}
-
-/// The ComponentVec trait is used to define a set of things that can be done on
-/// an Any without knowing its exact type.
-trait ComponentVec: Sync + Send {
-    fn to_any(&self) -> &dyn Any;
-    fn to_any_mut(&mut self) -> &mut dyn Any;
-    fn len(&mut self) -> usize;
-    fn swap_remove(&mut self, index: EntityId);
-    fn migrate(&mut self, entity_index: EntityId, other_archetype: &mut dyn ComponentVec);
-    fn new_same_type(&self) -> Box<dyn ComponentVec + Send + Sync>;
-}
-
-// This could be made unchecked in the future if there's a high degree of confidence in everything else.
-fn component_vec_to_mut<T: 'static>(c: &mut dyn ComponentVec) -> &mut Vec<T> {
-    c.to_any_mut()
-        .downcast_mut::<RwLock<Vec<T>>>()
-        .unwrap()
-        .get_mut()
-        .unwrap()
-}
-
-impl<T: Component> ComponentVec for RwLock<Vec<T>> {
-    fn to_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn to_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn len(&mut self) -> usize {
-        // Perhaps this call to read incurs unnecessary overhead.
-        self.get_mut().unwrap().len()
-    }
-
-    fn swap_remove(&mut self, index: EntityId) {
-        self.get_mut().unwrap().swap_remove(index as usize);
-    }
-
-    fn migrate(&mut self, entity_index: EntityId, other_component_vec: &mut dyn ComponentVec) {
-        let data: T = self.get_mut().unwrap().swap_remove(entity_index as usize);
-        component_vec_to_mut(other_component_vec).push(data);
-    }
-
-    fn new_same_type(&self) -> Box<dyn ComponentVec + Send + Sync> {
-        Box::new(RwLock::new(Vec::<T>::new()))
-    }
-}
-
-fn component_vec_to_mut<T: 'static>(c: &mut dyn ComponentVec) -> &mut Vec<T> {
-    c.to_any_mut()
-        .downcast_mut::<RwLock<Vec<T>>>()
-        .unwrap()
-        .get_mut()
-        .unwrap()
-}
-
-// for a component type, store its instances
-pub(crate) struct ComponentStore {
-    pub(crate) type_id: TypeId,
-    data: Box<dyn ComponentVec + Send + Sync>,
-}
-
-impl ComponentStore {
-    pub fn new<T: 'static + Send + Sync>() -> Self {
-        Self {
-            type_id: TypeId::of::<T>(),
-            data: Box::new(RwLock::new(Vec::<T>::new())),
-        }
-    }
-
-    /// Creates a new ComponentStore with the same internal storage type as self
-    pub fn new_same_type(&self) -> Self {
-        Self {
-            type_id: self.type_id,
-            data: self.data.new_same_type(),
-        }
-    }
-}
-
-#[doc(hidden)]
-/// An archetype stores entities with the same set of components type.
-/// components are their real component instance
-pub struct Archetype {
-    pub(crate) entities: Vec<EntityId>,
-    pub(crate) components: Vec<ComponentStore>,
-}
-
-impl Archetype {
-    pub fn new() -> Self {
-        Self {
-            entities: Vec::new(),
-            components: Vec::new(),
-        }
-    }
-
-    // basically get components of the given entity
-    pub(crate) fn get<T: 'static>(&self, index: usize) -> &RwLock<Vec<T>> {
-        self.components[index]
-            .data
-            .to_any()
-            .downcast_ref::<RwLock<Vec<T>>>()
-            .unwrap()
-    }
-
-    /// Returns the index of the entity moved
-    fn remove_entity(&mut self, index: EntityId) -> EntityId {
-        for c in self.components.iter_mut() {
-            c.data.swap_remove(index)
-        }
-        let moved = *self.entities.last().unwrap();
-        self.entities.swap_remove(index as usize);
-        moved
-    }
-    
-    fn mutable_component_store<T: 'static>(&mut self, component_index: usize) -> &mut Vec<T> {
-        component_vec_to_mut(&mut *self.components[component_index].data)
-    }
-
-    fn replace_component<T: 'static>(&mut self, component_index: usize, index: EntityId, t: T) {
-        self.mutable_component_store(component_index)[index as usize] = t;
-    }
-
-    fn push<T: 'static>(&mut self, component_index: usize, t: T) {
-        self.mutable_component_store(component_index).push(t)
-    }
-
-    // get component from component store for a given entity
-    fn get_component_mut<T: 'static>(
-        &mut self,
-        index: EntityId,
-    ) -> Result<&mut T, EntityMissingComponent> {
-        let type_id = TypeId::of::<T>();
-        let mut component_index = None;
-        for (i, c) in self.components.iter().enumerate() {
-            if c.type_id == type_id {
-                component_index = Some(i);
-                break;
-            }
-        }
-        if let Some(component_index) = component_index {
-            Ok(&mut self.mutable_component_store(component_index)[index as usize])
-        } else {
-            Err(EntityMissingComponent::new::<T>(index))
-        }
-    }
-
-    /// Removes the component from an entity and pushes it to the other archetype
-    /// The type does not need to be known to call this function.
-    /// But the types of component_index and other_index need to match.
-    fn migrate_component(
-        &mut self,
-        component_index: usize,
-        entity_index: EntityId,
-        other_archetype: &mut Archetype,
-        other_index: usize,
-    ) {
-        self.components[component_index].data.migrate(
-            entity_index,
-            &mut *other_archetype.components[other_index].data,
-        );
-    }
-
-    /// This takes a mutable reference so that the inner RwLock does not need to be locked
-    /// by instead using get_mut.
-    fn len(&mut self) -> usize {
-        self.entities.len()
-    }
-}
-
-/// An entity's location within Archetype array
-#[derive(Debug, Clone, Copy)]
-#[doc(hidden)]
-pub struct EntityLocation {
-    archetype_index: EntityId,   // index of archetype
-    index_in_archetype: EntityId,// inside archetype array, index of their components
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct EntityInfo {
-    pub(crate) generation: EntityId,     // index of generation
-    pub(crate) location: EntityLocation, // location info
-}
-
-/// A handle to an entity within the world.
-/// this seems to be useless
-#[derive(Debug, Clone, Copy, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Entity {
-    pub(crate) index: EntityId,
-    pub(crate) generation: EntityId,
-}
-
-// the given components bundle to a given entity
-// like when we do world.spawn(42, true, Name{})
-// the arechetype would be (42, true, Name{}) and along with its entity index
-// when we create some entity same components type as u32, bool, Name struct
-// it will be store in the same archetype?
-pub trait ComponentBundle: 'static + Send + Sync {
-    #[doc(hidden)]
-    fn new_archetype(&self) -> Archetype;
-    #[doc(hidden)]
-    fn spawn_in_world(self, world: &mut World, entity_index: EntityId) -> EntityLocation;
-}
-
-// calculate bundle id throught the hash value of all components type
-// then we get a unique id for the component bundle
-fn calculate_bundle_id(types: &[TypeId]) -> u64 {
-    let mut s = DefaultHasher::new();
-    types.hash(&mut s);
-    s.finish()
-}
-
+/// The world holds all components and associated entities.
 pub struct World {
     pub(crate) archetypes: Vec<Archetype>,
     bundle_id_to_archetype: HashMap<u64, usize>,
@@ -251,7 +39,6 @@ impl World {
             (index, generation)
         } else {
             // Push placeholder data
-            // here we push the first entity of the world
             self.entities.push(EntityInfo {
                 location: EntityLocation {
                     archetype_index: 0,
@@ -259,25 +46,117 @@ impl World {
                 },
                 generation: 0,
             });
+
             // Error if too many entities are allocated.
             debug_assert!(self.entities.len() <= EntityId::MAX as usize);
             ((self.entities.len() - 1) as EntityId, 0)
         };
+
         let location = b.spawn_in_world(self, index);
+
         self.entities[index as usize] = EntityInfo {
             location,
             generation: generation,
         };
+
         Entity { index, generation }
     }
 }
+/// A bundle of components
+/// Used to spawn new
+pub trait ComponentBundle: 'static + Send + Sync {
+    #[doc(hidden)]
+    fn new_archetype(&self) -> Archetype;
+    #[doc(hidden)]
+    fn spawn_in_world(self, world: &mut World, entity_index: EntityId) -> EntityLocation;
+}
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     #[test]
-//     fn test_create_entity_with_component() {
-//         let world = World::from_entity_store(EntityManager::default());
-//     }
-// }
+fn calculate_bundle_id(types: &[TypeId]) -> u64 {
+    let mut s = DefaultHasher::new();
+    types.hash(&mut s);
+    s.finish()
+}
+
+macro_rules! component_bundle_impl {
+    ($count: expr, $(($name: ident, $index: tt)),*) => {
+        impl< $($name: 'static + Send + Sync),*> ComponentBundle for ($($name,)*) {
+            fn new_archetype(&self) -> Archetype {
+                let mut components = vec![$(ComponentStore::new::<$name>()), *];
+                components.sort_unstable_by(|a, b| a.type_id.cmp(&b.type_id));
+                Archetype { components, entities: Vec::new() }
+            }
+
+            fn spawn_in_world(self, world: &mut World, entity_index: EntityId) -> EntityLocation {
+                let mut types = [$(($index, TypeId::of::<$name>())), *];
+                types.sort_unstable_by(|a, b| a.1.cmp(&b.1));
+                debug_assert!(
+                    types.windows(2).all(|x| x[0].1 != x[1].1),
+                    "`ComponentBundle`s cannot have duplicate types"
+                );
+
+                // Is there a better way to map the original ordering to the sorted ordering?
+                let mut order = [0; $count];
+                for i in 0..order.len() {
+                    order[types[i].0] = i;
+                }
+                let types = [$(types[$index].1), *];
+
+                let bundle_id = calculate_bundle_id(&types);
+
+                // Find the appropriate archetype
+                // If it doesn't exist create a new archetype.
+                let archetype_index = if let Some(archetype) = world.bundle_id_to_archetype.get(&bundle_id) {
+                    *archetype
+                } else {
+                    let archetype = self.new_archetype();
+                    let index = world.archetypes.len();
+
+                    world.bundle_id_to_archetype.insert(bundle_id, index);
+                    world.archetypes.push(archetype);
+                    index
+                };
+
+                world.archetypes[archetype_index].entities.push(entity_index);
+                $(world.archetypes[archetype_index].push(order[$index], self.$index);)*
+                EntityLocation {
+                    archetype_index: archetype_index as EntityId,
+                    index_in_archetype: (world.archetypes[archetype_index].len() - 1) as EntityId
+                }
+            }
+        }
+    }
+}
+
+component_bundle_impl! {1, (A, 0)}
+component_bundle_impl! {2, (A, 0), (B, 1)}
+component_bundle_impl! {3, (A, 0), (B, 1), (C, 2)}
+component_bundle_impl! {4, (A, 0), (B, 1), (C, 2), (D, 3)}
+component_bundle_impl! {5, (A, 0), (B, 1), (C, 2), (D, 3), (E, 4)}
+component_bundle_impl! {6, (A, 0), (B, 1), (C, 2), (D, 3), (E, 4), (F, 5)}
+component_bundle_impl! {7, (A, 0), (B, 1), (C, 2), (D, 3), (E, 4), (F, 5), (G, 6)}
+component_bundle_impl! {8, (A, 0), (B, 1), (C, 2), (D, 3), (E, 4), (F, 5), (G, 6), (H, 7)}
+component_bundle_impl! {9, (A, 0), (B, 1), (C, 2), (D, 3), (E, 4), (F, 5), (G, 6), (H, 7), (I, 8)}
+component_bundle_impl! {10, (A, 0), (B, 1), (C, 2), (D, 3), (E, 4), (F, 5), (G, 6), (H, 7), (I, 8), (J, 9)}
+component_bundle_impl! {11, (A, 0), (B, 1), (C, 2), (D, 3), (E, 4), (F, 5), (G, 6), (H, 7), (I, 8), (J, 9), (K, 10)}
+component_bundle_impl! {12, (A, 0), (B, 1), (C, 2), (D, 3), (E, 4), (F, 5), (G, 6), (H, 7), (I, 8), (J, 9), (K, 10), (L, 11)}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tust_world_spawn() {
+        let mut world = World::new();
+        struct Name {}
+        struct Move {}
+        world.spawn((21, true));
+        world.spawn((2, false));
+        world.spawn((2, true));
+        world.spawn((5, true));
+        world.spawn((21, Name{}, Move{}));
+        println!("{}", world.archetypes.len());
+        println!("{}", world.entities.len());
+    }
+}
+

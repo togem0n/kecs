@@ -1,7 +1,7 @@
-use crate::test_dir::entity::*;
-use crate::test_dir::component::*;
+use crate::entity::*;
+use crate::component::*;
 use std::sync::RwLock;
-use std::any::{Any, TypeId};
+use std::any::{TypeId};
 
 /// An archetype stores entities with the same set of components.
 #[doc(hidden)]
@@ -10,6 +10,7 @@ pub struct Archetype {
     pub(crate) components: Vec<ComponentStore>,
 }
 
+#[allow(dead_code)]
 impl Archetype {
     pub fn new() -> Self {
         Self {
