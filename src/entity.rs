@@ -10,7 +10,7 @@ pub struct EntityLocation {
 }
 
 /// An entity's info inside entity list
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 pub(crate) struct EntityInfo {
     pub(crate) generation: EntityId,
